@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:couldai_user_app/services/pc_control_service.dart';
 
@@ -11,57 +10,19 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final LocalAuthentication auth = LocalAuthentication();
   String _status = "Ready";
   bool _isProcessing = false;
 
   Future<void> _handleWakeAndUnlock() async {
     setState(() {
       _isProcessing = true;
-      _status = "Authenticating...";
+      _status = "Processing...";
     });
 
     try {
-      // 1. Authenticate
-      final bool canAuthenticateWithBiometrics = await auth.canCheckBiometrics;
-      final bool canAuthenticate = canAuthenticateWithBiometrics || await auth.isDeviceSupported();
-
-      bool didAuthenticate = false;
+      // Authentication removed as per request - direct execution
       
-      if (canAuthenticate) {
-        try {
-          didAuthenticate = await auth.authenticate(
-            localizedReason: 'Scan fingerprint to wake and unlock PC',
-            options: const AuthenticationOptions(
-              stickyAuth: true,
-              biometricOnly: false,
-            ),
-          );
-        } catch (e) {
-          // Fallback for simulators or errors
-          print("Auth error: $e");
-          // For testing purposes in simulator where auth might fail or not be setup:
-          // didAuthenticate = true; // Uncomment to bypass in dev
-          _showError("Authentication failed: $e");
-          setState(() { _isProcessing = false; _status = "Auth Failed"; });
-          return;
-        }
-      } else {
-        // If no biometrics, maybe just proceed or ask for pin (simplified here)
-        _showError("Biometrics not available on this device");
-        setState(() { _isProcessing = false; _status = "No Biometrics"; });
-        return;
-      }
-
-      if (!didAuthenticate) {
-        setState(() {
-          _isProcessing = false;
-          _status = "Cancelled";
-        });
-        return;
-      }
-
-      // 2. Load Settings
+      // 1. Load Settings
       setState(() => _status = "Loading settings...");
       final prefs = await SharedPreferences.getInstance();
       final mac = prefs.getString('mac_address');
@@ -72,25 +33,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (mac == null || mac.isEmpty) {
         _showError("Please configure PC settings first.");
-        Navigator.pushNamed(context, '/settings');
+        if (mounted) {
+          Navigator.pushNamed(context, '/settings');
+        }
         setState(() { _isProcessing = false; _status = "Setup Required"; });
         return;
       }
 
-      // 3. Send Wake-on-LAN
+      // 2. Send Wake-on-LAN
       setState(() => _status = "Sending Wake Signal...");
       await PcControlService.wakePC(mac, broadcastIp);
       
-      // 4. Send Unlock Signal
-      // We might want to wait a bit or send it immediately. 
-      // If the PC is asleep, it takes time to wake up.
-      // For "Unlock", usually the PC needs to be awake.
-      // We'll try sending it immediately, but in reality, you might need a retry mechanism.
+      // 3. Send Unlock Signal
       if (pcIp != null && pcIp.isNotEmpty) {
         setState(() => _status = "Sending Unlock Signal...");
-        // Small delay to allow network card to wake up fully if it was deep sleep? 
-        // Actually WoL is fast, but OS boot/wake takes seconds.
-        // We'll send it, but user might need to press again if PC was fully off.
         try {
           await PcControlService.unlockPC(pcIp, port, secret);
           setState(() => _status = "Signal Sent!");
@@ -103,9 +59,11 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() => _status = "Wake Signal Sent!");
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Wake command sent successfully!')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Wake command sent successfully!')),
+        );
+      }
 
     } catch (e) {
       _showError("Error: $e");
@@ -168,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
                 child: Icon(
-                  Icons.fingerprint,
+                  Icons.power_settings_new,
                   size: 80,
                   color: _isProcessing ? Colors.white54 : Colors.white,
                 ),
